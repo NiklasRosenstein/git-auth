@@ -33,6 +33,24 @@ import re
 __author__ = 'Niklas Rosenstein <rosensteinniklas(at)gmail.com>'
 __version__ = '0.9.0'
 
+ACCESS_READ = 1 << 0
+ACCESS_WRITE = 1 << 1
+
+
+def get_subpath(path, parent):
+  relpath = os.path.relpath(path, parent)
+  if relpath == os.curdir or relpath.startswith(os.pardir):
+    return None
+  return relpath
+
+
+def is_subpath(path, parent):
+  return bool(get_subpath(path, parent))
+
+
+# == Git Auth Layer ===========================================================
+# =============================================================================
+
 User = collections.namedtuple('User', 'name home manage')
 
 
@@ -42,7 +60,7 @@ class AccessControl(object):
   class UnknownUser(Exception):
     pass
 
-  def get_user(self, user_name):
+  def get_user(self, auth, user_name):
     ''' Retrieve user information.
 
     Returns:
@@ -53,15 +71,26 @@ class AccessControl(object):
     '''
     raise NotImplementedError
 
+  def access_info(self, auth, user_name, path):
+    ''' Return a bitfield indicating the access permissions of the
+    user to the specified absolute *path* on the local filesystem. '''
+    raise NotImplementedError
+
 
 class SimpleAccessControl(AccessControl):
   ''' This simple implementation of the `AccessControl` interface
   allows all registered users to manage their home directory via SSH. '''
 
-  def get_user(self, user_name):
+  def get_user(self, auth, user_name):
     if not re.match('[A-z0-9\-_]', user_name):
       raise self.UnknownUser(user_name)
     return User(user_name, '/' + user_name, True)
+
+  def access_info(self, auth, user_name, path):
+    home = os.path.join(auth.config.repository_root, user_name)
+    if is_subpath(path, home):
+      return ACCESS_READ | ACCESS_WRITE
+    return 0
 
 
 class GitAuth(object):
@@ -71,7 +100,7 @@ class GitAuth(object):
     super().__init__()
     if config is None:
       import git_auth_config as config
-    self.user = config.access_control.get_user(user)
+    self.user = config.access_control.get_user(self, user)
     self.config = config
 
   def command(self, command):
@@ -122,6 +151,51 @@ class GitAuth(object):
         elif command[0] == '?':
           command[0] = 'help'
         self.command(command)
+
+  def repo2path(self, repo_name):
+    ''' Converts a relative repository name to an absolute path on the
+    filesystem based on the repository root directory as specified in
+    the configuration. '''
+
+    if os.name == 'nt':
+      repo_name = repo_name.replace('/', '\\')
+
+    if not repo_name.endswith('.git'):
+      repo_name += '.git'
+    path = os.path.join(self.config.repository_root, repo_name)
+    path = os.path.normpath(path)
+    return path
+
+  def path2repo(self, path):
+    ''' Converts the specified absolute path to a relative repository
+    name. The original path can be obtained with `repo2path()`. The
+    path is returned even if the repository does not exist. The `.git`
+    suffix is removed from the path. None will be returned if the
+    path does not end with `.git` or is not inside the repository
+    root directory. '''
+
+    if not path.endswith('.git'):
+      return None
+    path = os.path.normpath(path[:-4])
+    relpath = get_subpath(path, self.config.repository_root)
+    if not relpath:
+      return None
+
+    if os.name == 'nt':
+      relpath = relpath.replace('\\', '/')
+    return relpath
+
+  def check_access(self, path, mode):
+    ''' Returns True if the current user has access in the specified
+    *mode* to *path*, False if not. '''
+
+    if mode not in 'rw':
+      raise ValueError('invalid mode {!r}'.format(mode))
+    info = self.config.access_control.access_info(self, self.user.name, path)
+    if mode == 'w':
+      return info & ACCESS_WRITE
+    elif mode == 'r':
+      return info & ACCESS_READ or info & ACCESS_WRITE
 
 
 # == Command Functions ========================================================
