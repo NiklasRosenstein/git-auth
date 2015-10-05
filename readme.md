@@ -35,7 +35,7 @@ commands are available:
       Rename a repository. The repository name restrictions of the `repo
       create` command apply.
 
-    repo delete <name>
+    repo delete <repo>
       Delete the specified repository.
 
     repo show [<filter>]

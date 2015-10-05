@@ -89,7 +89,10 @@ class GitAuth(object):
     if not callable(command_func):
       print("unknown command:", command[0], file=sys.stderr)
     else:
-      return command_func(self, command[1:])
+      try:
+        return command_func(self, command[1:])
+      except SystemExit as exc:
+        return exc.code
     return 255
 
   def commands(self):
