@@ -33,7 +33,7 @@ import re
 __author__ = 'Niklas Rosenstein <rosensteinniklas(at)gmail.com>'
 __version__ = '0.9.0'
 
-User = collections.namedtuple('User', 'name home can_manage')
+User = collections.namedtuple('User', 'name home manage')
 
 
 class AccessControl(object):
@@ -105,6 +105,21 @@ class GitAuth(object):
 
     return commands
 
+  def cmdloop(self, intro='git-auth$ '):
+    ''' Enters the interactive shell. '''
+
+    header = "git-auth v{0} - Copyright (C) 2015 {1}"
+    print(header.format(__version__, __author__))
+
+    while True:
+      command = shlex.split(input(intro))
+      if command:
+        if command[0] == 'exit':
+          break
+        elif command[0] == '?':
+          command[0] = 'help'
+        self.command(command)
+
 
 # == Command Functions ========================================================
 # =============================================================================
@@ -154,20 +169,12 @@ def main():
       return subprocess.call(args.command)
 
   # Users without manage privileges can't go past this line.
-  if not auth.user.can_manage:
-    print("Ask the administrator for manage privileges.")
+  if not auth.user.manage:
+    print("You are not privileged for SSH Access.")
     return errno.EPERM
 
   if args.command:
     return auth.command(args.command)
 
-  prefix = "git-auth-{0}".format(__version__)
-  print(prefix, "- Copyright (C) 2015 Niklas Rosenstein")
-  while True:
-    command = shlex.split(input(prefix + '$ '))
-    if command and command[0] == 'exit':
-      break
-    elif command:
-      auth.command(command)
-
+  auth.cmdloop()
   return 0
