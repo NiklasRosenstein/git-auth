@@ -161,5 +161,13 @@ def main():
   if args.command:
     return auth.command(args.command)
 
-  # TODO: interactive session
+  prefix = "git-auth-{0}".format(__version__)
+  print(prefix, "- Copyright (C) 2015 Niklas Rosenstein")
+  while True:
+    command = shlex.split(input(prefix + '$ '))
+    if command and command[0] == 'exit':
+      break
+    elif command:
+      auth.command(command)
+
   return 0
