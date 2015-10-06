@@ -24,6 +24,7 @@ import argparse
 import collections
 import errno
 import itertools
+import json
 import shlex
 import shutil
 import subprocess
@@ -63,6 +64,27 @@ def confirm(question):
       return False
     else:
       print("Please reply with yes/y or no/n.")
+
+
+def parse_webhooks(filename):
+  ''' Parses a file containing webhook URLs and returns a dictionary. '''
+
+  # XXX: Callers should catch ValueErrors
+
+  if not os.path.isfile(filename):
+    return {}
+  result = {}
+  with open(filename, 'r') as fp:
+    return json.load(fp)
+
+
+def write_webhooks(filename, hooks):
+  ''' Writes a dictionary containing webhook URLs to the specified file. '''
+
+  # XXX: Validate hooks parameter
+
+  with open(filename, 'w') as fp:
+    json.dump(hooks, fp, indent=1)
 
 
 # == Git Auth Layer ===========================================================
@@ -288,6 +310,15 @@ def command_repo(session, args):
   describe_p.add_argument('description', nargs='?')
   list_p = subparser.add_parser('list')
   list_p.add_argument('-d', '--describe', action='store_true')
+  hook_install_p = subparser.add_parser('install-hook')
+  hook_install_p.add_argument('repo')
+  hook_install_p.add_argument('name')
+  hook_install_p.add_argument('url')
+  hook_list_p = subparser.add_parser('list-hooks')
+  hook_list_p.add_argument('repo')
+  hook_remove_p = subparser.add_parser('remove-hook')
+  hook_remove_p.add_argument('repo')
+  hook_remove_p.add_argument('name')
   args = parser.parse_args(args)
 
   if not args.cmd:
@@ -349,6 +380,35 @@ def command_repo(session, args):
     else:
       with open(descfile, 'r') as fp:
         print(fp.read().rstrip())
+    return 0
+  elif args.cmd == 'install-hook':
+    # XXX: Validate hook name?
+    # XXX: Validate URL scheme?
+    path = _check_repo(session, args.repo, ACCESS_MANAGE, 'exists')
+    hooksfile = os.path.join(path, 'webhooks')
+    hooks = parse_webhooks(hooksfile)
+    if args.name in hooks:
+      print("error: webhook name {!r} occupied".format(args.name))
+      return errno.EEXIST
+    hooks[args.name] = args.url
+    write_webhooks(hooksfile, hooks)
+    return 0
+  elif args.cmd == 'list-hooks':
+    path = _check_repo(session, args.repo, ACCESS_MANAGE, 'exists')
+    hooksfile = os.path.join(path, 'webhooks')
+    hooks = parse_webhooks(hooksfile)
+    for name, url in sorted(hooks.items(), key=lambda x: x[0]):
+      print("{0}: {1}".format(name, url))
+    return 0
+  elif args.cmd == 'remove-hook':
+    path = _check_repo(session, args.repo, ACCESS_MANAGE, 'exists')
+    hooksfile = os.path.join(path, 'webhooks')
+    hooks = parse_webhooks(hooksfile)
+    if args.name not in hooks:
+      print("error: webhook {!r} does not exist".format(args.name))
+      return errno.ENOENT
+    del hooks[args.name]
+    write_webhooks(hooksfile, hooks)
     return 0
   elif args.cmd == 'list':
     for repo_name, path in session.repositories():

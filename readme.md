@@ -45,13 +45,13 @@ commands are available:
       Show a list of all repositories that the user can read from or
       write to.
 
-    repo webhook install <repo> <url>
+    repo install-hook <repo> <name> <url>
       Install a webhook for the specified repository. The specified URL
       will be sent a HTTP POST request with information about what 
       happened to the repository (eg. updated, deleted, renamed).
 
-    repo webhook show <repo>
+    repo list-hooks <repo>
       Show a list of webhooks installed for the specified repository.
 
-    repo webhook remove <repo> <url>
-      Remo a webhook URL from the specified repository.
+    repo remove-hook <repo> <name>
+      Remo a webhook from the specified repository.
