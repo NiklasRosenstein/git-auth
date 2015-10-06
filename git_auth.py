@@ -235,6 +235,41 @@ class GitAuthSession(object):
 # == Command Functions ========================================================
 # =============================================================================
 
+def _check_repo(session, repo_name, access_mask, check='exists'):
+  ''' Helper function that converts the repository name to the full
+  path, makes sure it exists and checks if the user has access to
+  the repository with the specified access mask. Returns the path
+  to the repository or raises `SystemExit` with the appropriate
+  exit code. '''
+
+  path = session.repo2path(repo_name)
+  if not session.get_access_info(path) & access_mask:
+    if access_mask & ACCESS_MANAGE:
+      mode = 'manage'
+    elif access_mask & ACCESS_WRITE:
+      mode = 'write'
+    elif access_mask & ACCESS_READ:
+      mode = 'read'
+    else:
+      mode = '<invalid access mask>'
+    print("error: {0} permission to {!r} denied".format(mode, repo_name))
+    raise SystemExit(errno.EPERM)
+  if check == 'exists':
+    if not os.path.exists(path):
+      print("error: repository {!r} does not exist".format(repo_name))
+      raise SystemExit(errno.ENOENT)
+    if not os.path.isdir(path):
+      print("fatal error: repository {!r} is not a directory".format(args.repo))
+      raise SystemExit(errno.ENOENT)  # XXX: better exit code?
+  elif check == 'not-exists':
+    if os.path.exists(path):
+      print("error: repository {!r} already exists".format(repo_name))
+      raise SystemExit(errno.EEXIST)
+  elif check:
+    raise ValueError("invalid check value: {!r}".format(check))
+  return path
+
+
 def command_repo(session, args):
   ''' Manage repositories. '''
 
@@ -259,45 +294,25 @@ def command_repo(session, args):
     return 0
 
   if args.cmd == 'create':
-    path = session.repo2path(args.name)
-    if not session.get_access_info(path) & ACCESS_MANAGE:
-      print("error: manage permission to {!r} denied".format(args.name))
-      return errno.EPERM
+    path = _check_repo(session, args.name, ACCESS_MANAGE, 'not-exists')
 
     # Make sure that none of the parent directories is a repository.
     if any(x.endswith('.git') for x in path.split(os.sep)[:-1]):
       print("error: can not create repository inside repository")
       return errno.EPERM
 
-    if os.path.exists(path):
-      print("error: repository {!r} already exists.".format(args.name))
-      return errno.EEXIST
-
     res = subprocess.call(['git', 'init', '--bare', path])
     if res != 0:
       print("error: repository could not be created.")
     return res
   elif args.cmd == 'rename':
-    old_path = session.repo2path(args.old)
-    new_path = session.repo2path(args.new)
-    if not session.get_access_info(old_path) & ACCESS_MANAGE:
-      print("error: manage permission to {!r} denied".format(args.old))
-      return errno.EPERM
-    if not session.get_access_info(new_path) & ACCESS_MANAGE:
-      print("error: manage permission to {!r} denied".format(args.new))
-      return errno.EPERM
+    old_path = _check_repo(session, args.old, ACCESS_MANAGE, 'exists')
+    new_path = _check_repo(session, args.new, ACCESS_MANAGE, 'not-exists')
 
     # Make sure that none of the parent directories is a repository.
     if any(x.endswith('.git') for x in new_path.split(os.sep)[:-1]):
       print("error: can not create repository inside repository")
       return errno.EPERM
-
-    if not os.path.exists(old_path):
-      print("error: repository {!r} does not exist".format(args.old))
-      return errno.ENOENT
-    if os.path.exists(new_path):
-      print("error: repository {!r} already exists.".format(args.new))
-      return errno.EEXIST
 
     try:
       # Make sure the parent of the new target directory exists.
@@ -310,17 +325,7 @@ def command_repo(session, args):
       return exc.errno
     return 0
   elif args.cmd == 'delete':
-    path = session.repo2path(args.repo)
-    if not session.get_access_info(path) & ACCESS_MANAGE:
-      print("error: manage permission to {!r} denied".format(args.repo))
-      return errno.EPERM
-    if not os.path.exists(path):
-      print("error: repository {!r} does not exist".format(args.repo))
-      return errno.ENOENT
-    if not os.path.isdir(path):
-      print("fatal error: repository {!r} is not a directory".format(args.repo))
-      return errno.ENOENT
-
+    path = _check_repo(session, args.repo, ACCESS_MANAGE, 'exists')
     if not args.force:
       if not confirm('do you really want to delete this repository?'):
         return 0
@@ -335,13 +340,7 @@ def command_repo(session, args):
       print("done.")
     return 0
   elif args.cmd == 'describe':
-    path = session.repo2path(args.repo)
-    if not session.get_access_info(path) & ACCESS_MANAGE:
-      print("error: manage permission to {!r} denied".format(args.repo))
-      return errno.EPERM
-    if not os.path.exists(path):
-      print("error: repository {!r} does not exist".format(args.repo))
-      return errno.ENOENT
+    path = _check_repo(session, args.repo, ACCESS_MANAGE, 'exists')
     descfile = os.path.join(path, 'description')
     if args.description:
       with open(descfile, 'w') as fp:
