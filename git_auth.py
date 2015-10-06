@@ -295,6 +295,10 @@ def command_repo(session, args):
       return errno.EEXIST
 
     try:
+      # Make sure the parent of the new target directory exists.
+      parent = os.path.dirname(new_path)
+      if not os.path.exists(parent):
+        os.makedirs(parent)
       os.rename(old_path, new_path)
     except (OSError, IOError) as exc:
       print("error:", exc)
