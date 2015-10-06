@@ -287,6 +287,7 @@ def command_repo(session, args):
   describe_p.add_argument('repo')
   describe_p.add_argument('description', nargs='?')
   list_p = subparser.add_parser('list')
+  list_p.add_argument('-d', '--describe', action='store_true')
   args = parser.parse_args(args)
 
   if not args.cmd:
@@ -361,6 +362,10 @@ def command_repo(session, args):
         flags[2] = 'm'
       if info:
         print(''.join(flags), ': ', repo_name, sep='')
+        if args.describe:
+          with open(os.path.join(path, 'description'), 'r') as fp:
+            for line in textwrap.wrap(fp.read().rstrip()):
+              print('  ', line, sep='')
     return 0
 
   print("error: command not handled.")
