@@ -68,66 +68,62 @@ def confirm(question):
 # == Git Auth Layer ===========================================================
 # =============================================================================
 
-User = collections.namedtuple('User', 'name home manage')
+class AccessController(object):
+  ''' This interface describes the controller to manage access to Git
+  repositories. '''
 
+  User = collections.namedtuple('User', 'name home shell_access')
 
-class AccessControl(object):
-  ''' Base class to manage access control. '''
+  class UnknownUser(Exception): pass
 
-  class UnknownUser(Exception):
-    pass
+  def get_user_info(self, session, user_name):
+    ''' Return user information for the specified *user_name* or raise
+    `AccessController.UnknownUser` if the user does not exist. '''
 
-  def get_user(self, auth, user_name):
-    ''' Retrieve user information.
+    raise self.UnknownUser(user_name)
 
-    Returns:
-      User: Information about the requested user.
-    Raises:
-      UnknownUser: If the specified user doesn't exist (also if the user
-        name contains invalid characters).
-    '''
-    raise NotImplementedError
+  def get_access_info(self, session, user_name, path):
+    ''' Return a bit mask that indicates the access privileges of the
+    user with the specified *user_name* to the *path*. The *path* would
+    usually be a sub path of the `repository_root` in the configuration. '''
 
-  def access_info(self, auth, user_name, path):
-    ''' Return a bitfield indicating the access permissions of the
-    user to the specified absolute *path* on the local filesystem. '''
     raise NotImplementedError
 
 
-class SimpleAccessControl(AccessControl):
-  ''' This simple implementation of the `AccessControl` interface
+class SimpleAccessController(AccessController):
+  ''' This simple implementation of the `AccessController` interface
   allows all registered users to manage their home directory via SSH. '''
 
   def __init__(self, has_root=False):
     super().__init__()
     self.has_root = has_root
 
-  def get_user(self, auth, user_name):
+  def get_user_info(self, session, user_name):
     if not re.match('[A-z0-9\-_]', user_name):
       raise self.UnknownUser(user_name)
     if self.has_root and user_name == 'root':
-      return User(user_name, '/', True)
-    return User(user_name, '/' + user_name, True)
+      return self.User(user_name, '/', True)
+    return self.User(user_name, '/' + user_name, True)
 
-  def access_info(self, auth, user_name, path):
+  def get_access_info(self, session, user_name, path):
     if self.has_root and user_name == 'root':
-      if is_subpath(path, auth.config.repository_root):
+      if is_subpath(path, session.config.repository_root):
         return ACCESS_READ | ACCESS_WRITE | ACCESS_MANAGE
 
-    home = os.path.join(auth.config.repository_root, user_name)
+    home = os.path.join(session.config.repository_root, user_name)
     if is_subpath(path, home):
       return ACCESS_READ | ACCESS_WRITE | ACCESS_MANAGE
     return 0
 
 
-class GitAuth(object):
+class GitAuthSession(object):
   ''' This is the central authentication and repository management class. '''
 
   def __init__(self, user, config=None):
     super().__init__()
     if config is None:
       import git_auth_config as config
-    self.user = config.access_control.get_user(self, user)
+    self.user = config.access_controller.get_user_info(self, user)
     self.config = config
 
   def command(self, command):
@@ -212,19 +208,13 @@ class GitAuth(object):
       relpath = relpath.replace('\\', '/')
     return relpath
 
-  def check_access(self, path, mode):
-    ''' Returns True if the current user has access in the specified
-    *mode* to *path*, False if not. *mode* can be "r" or "w". '''
+  def get_access_info(self, path):
+    ''' Wrapper for the `AccessController.get_access_info()` function
+    that uses this session and the current user name. Returns a bit
+    field with the access privileges of the current user to *path*. '''
 
-    if mode not in 'rwm':
-      raise ValueError('invalid mode {!r}'.format(mode))
-    info = self.config.access_control.access_info(self, self.user.name, path)
-    if mode == 'r':
-      return info & ACCESS_READ or info & ACCESS_WRITE or info & ACCESS_MANAGE
-    elif mode == '2':
-      return info & ACCESS_WRITE or info & ACCESS_MANAGE
-    elif mode == 'm':
-      return info & ACCESS_MANAGE
+    controller = self.config.access_controller
+    return controller.get_access_info(self, self.user.name, path)
 
   def repositories(self):
     ''' Iterate over all repositories. Yields tuples in the form of
@@ -243,7 +233,7 @@ class GitAuth(object):
 # == Command Functions ========================================================
 # =============================================================================
 
-def command_repo(auth, args):
+def command_repo(session, args):
   ''' Manage repositories. '''
 
   parser = argparse.ArgumentParser(prog='repo')
@@ -264,8 +254,8 @@ def command_repo(auth, args):
     return 0
 
   if args.cmd == 'create':
-    path = auth.repo2path(args.name)
-    if not auth.check_access(path, 'm'):
+    path = session.repo2path(args.name)
+    if not session.get_access_info(path) & ACCESS_MANAGE:
       print("error: manage permission to {!r} denied".format(args.name))
       return errno.EPERM
 
@@ -283,12 +273,12 @@ def command_repo(auth, args):
       print("error: repository could not be created.")
     return res
   elif args.cmd == 'rename':
-    old_path = auth.repo2path(args.old)
-    new_path = auth.repo2path(args.new)
-    if not auth.check_access(old_path, 'm'):
+    old_path = session.repo2path(args.old)
+    new_path = session.repo2path(args.new)
+    if not session.get_access_info(old_path) & ACCESS_MANAGE:
       print("error: manage permission to {!r} denied".format(args.old))
       return errno.EPERM
-    if not auth.check_access(new_path, 'm'):
+    if not session.get_access_info(new_path) & ACCESS_MANAGE:
       print("error: manage permission to {!r} denied".format(args.new))
       return errno.EPERM
 
@@ -311,8 +301,8 @@ def command_repo(auth, args):
       return exc.errno
     return 0
   elif args.cmd == 'delete':
-    path = auth.repo2path(args.repo)
-    if not auth.check_access(path, 'm'):
+    path = session.repo2path(args.repo)
+    if not session.get_access_info(path) & ACCESS_MANAGE:
       print("error: manage permission to {!r} denied".format(args.repo))
       return errno.EPERM
     if not os.path.exists(path):
@@ -336,8 +326,8 @@ def command_repo(auth, args):
       print("done.")
     return 0
   elif args.cmd == 'list':
-    for repo_name, path in auth.repositories():
-      info = auth.config.access_control.access_info(auth, auth.user.name, path)
+    for repo_name, path in session.repositories():
+      info = session.get_access_info(path)
       flags = list('---')
       if info & ACCESS_READ:
         flags[0] = 'r'
@@ -353,12 +343,12 @@ def command_repo(auth, args):
   return 255
 
 
-def command_help(auth, args):
+def command_help(session, args):
   ''' Show this help. '''
 
   print("Available commands:")
   print()
-  for key, func in sorted(auth.commands().items(), key=lambda x: x[0]):
+  for key, func in sorted(session.commands().items(), key=lambda x: x[0]):
     print(key)
     if func.__doc__:
       for line in textwrap.wrap(textwrap.dedent(func.__doc__)):
@@ -379,7 +369,7 @@ def get_argument_parser():
 def main():
   parser = get_argument_parser()
   args = parser.parse_args()
-  auth = GitAuth(args.user)
+  session = GitAuthSession(args.user)
 
   if not args.command:
     ssh_command = os.environ.pop('SSH_ORIGINAL_COMMAND', None)
@@ -391,12 +381,12 @@ def main():
       return subprocess.call(args.command)
 
   # Users without manage privileges can't go past this line.
-  if not auth.user.manage:
+  if not session.user.shell_access:
     print("You are not privileged for SSH Access.")
     return errno.EPERM
 
   if args.command:
-    return auth.command(args.command)
+    return session.command(args.command)
 
-  auth.cmdloop()
+  session.cmdloop()
   return 0

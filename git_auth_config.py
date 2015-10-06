@@ -5,4 +5,4 @@ import os
 import git_auth
 
 repository_root = os.path.expanduser('~/repos')
-access_control = git_auth.SimpleAccessControl(has_root=True)
+access_controller = git_auth.SimpleAccessController(has_root=True)
