@@ -38,6 +38,9 @@ commands are available:
     repo delete <repo>
       Delete the specified repository.
 
+    repo describe <repo> [<description>]
+      Show or set the description of the specified repository.
+
     repo list
       Show a list of all repositories that the user can read from or
       write to.

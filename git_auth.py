@@ -248,6 +248,9 @@ def command_repo(session, args):
   delete_p = subparser.add_parser('delete')
   delete_p.add_argument('repo')
   delete_p.add_argument('-f', '--force', action='store_true')
+  describe_p = subparser.add_parser('describe')
+  describe_p.add_argument('repo')
+  describe_p.add_argument('description', nargs='?')
   list_p = subparser.add_parser('list')
   args = parser.parse_args(args)
 
@@ -330,6 +333,22 @@ def command_repo(session, args):
       return exc.errno
     else:
       print("done.")
+    return 0
+  elif args.cmd == 'describe':
+    path = session.repo2path(args.repo)
+    if not session.get_access_info(path) & ACCESS_MANAGE:
+      print("error: manage permission to {!r} denied".format(args.repo))
+      return errno.EPERM
+    if not os.path.exists(path):
+      print("error: repository {!r} does not exist".format(args.repo))
+      return errno.ENOENT
+    descfile = os.path.join(path, 'description')
+    if args.description:
+      with open(descfile, 'w') as fp:
+        fp.write(args.description)
+    else:
+      with open(descfile, 'r') as fp:
+        print(fp.read().rstrip())
     return 0
   elif args.cmd == 'list':
     for repo_name, path in session.repositories():
