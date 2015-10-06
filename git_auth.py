@@ -145,6 +145,8 @@ class GitAuthSession(object):
         return command_func(self, command[1:])
       except SystemExit as exc:
         return exc.code
+      except Exception as exc:
+        traceback.print_exc()
     return 255
 
   def commands(self):
