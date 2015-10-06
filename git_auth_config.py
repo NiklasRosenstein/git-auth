@@ -6,3 +6,4 @@ import git_auth
 
 repository_root = os.path.expanduser('~/repos')
 access_controller = git_auth.SimpleAccessController(has_root=True)
+host_name = 'my_git_server'  # User for webhooks

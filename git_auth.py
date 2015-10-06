@@ -127,6 +127,13 @@ def write_webhooks(filename, hooks):
     json.dump(hooks, fp, indent=1)
 
 
+def invoke_webhook(url, data):
+  ''' Invokes the webhook at the specified URL with the JSON *data*. '''
+
+  # XXX: Implement invoke_webhook()
+  raise NotImplementedError("invoke_webhook() not implemented")
+
+
 # == Git Auth Layer ===========================================================
 # =============================================================================
 
@@ -464,14 +471,29 @@ def _command_git_upload_pack(session, args):
   return subprocess.call(['git-upload-pack', path])
 
 
+
 @command('git-receive-pack', requires_permission=False)
 def _command_git_upload_pack(session, args):
   parser = argparse.ArgumentParser(prog='git-receive-pack')
   parser.add_argument('repo')
   args = parser.parse_args(args)
   path = check_repo(session, args.repo, ACCESS_WRITE, 'exists')
-  return subprocess.call(['git-receive-pack', path])
-
+  res = subprocess.call(['git-receive-pack', path])
+  hooksfile = os.path.join(path, 'webhooks')
+  hooks = parse_webhooks(hooksfile)
+  if not res and hooks:
+    printerr('info: invoking webhooks')
+    data = {'host': session.config.host_name,
+      'repo': args.repo, 'event': 'update'}
+    for name, url in hooks.items():
+      printerr('info:  ', name, end='... ')
+      try:
+        invoke_webhook(url, data)
+      except Exception as exc:  # XXX: Catch the right exception for connection and communication errors
+        printerr('error. ({0})'.format(exc))
+      else:
+        printerr('success.')
+  return res
 
 # == Main =====================================================================
 # =============================================================================
