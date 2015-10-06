@@ -38,10 +38,9 @@ commands are available:
     repo delete <repo>
       Delete the specified repository.
 
-    repo show [<filter>]
-      Show a list of all repositories that the user can read, write or
-      manage depending on the specified filter. The filter defaults to "all".
-      Valid values are "read", "write", "manage" and "all".
+    repo list
+      Show a list of all repositories that the user can read from or
+      write to.
 
     repo webhook install <repo> <url>
       Install a webhook for the specified repository. The specified URL

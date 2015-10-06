@@ -36,6 +36,7 @@ __version__ = '0.9.0'
 
 ACCESS_READ = 1 << 0
 ACCESS_WRITE = 1 << 1
+ACCESS_MANAGE = 1 << 2
 
 
 def get_subpath(path, parent):
@@ -111,11 +112,11 @@ class SimpleAccessControl(AccessControl):
   def access_info(self, auth, user_name, path):
     if self.has_root and user_name == 'root':
       if is_subpath(path, auth.config.repository_root):
-        return ACCESS_READ | ACCESS_WRITE
+        return ACCESS_READ | ACCESS_WRITE | ACCESS_MANAGE
 
     home = os.path.join(auth.config.repository_root, user_name)
     if is_subpath(path, home):
-      return ACCESS_READ | ACCESS_WRITE
+      return ACCESS_READ | ACCESS_WRITE | ACCESS_MANAGE
     return 0
 
 
@@ -213,15 +214,30 @@ class GitAuth(object):
 
   def check_access(self, path, mode):
     ''' Returns True if the current user has access in the specified
-    *mode* to *path*, False if not. '''
+    *mode* to *path*, False if not. *mode* can be "r" or "w". '''
 
-    if mode not in 'rw':
+    if mode not in 'rwm':
       raise ValueError('invalid mode {!r}'.format(mode))
     info = self.config.access_control.access_info(self, self.user.name, path)
-    if mode == 'w':
-      return info & ACCESS_WRITE
-    elif mode == 'r':
-      return info & ACCESS_READ or info & ACCESS_WRITE
+    if mode == 'r':
+      return info & ACCESS_READ or info & ACCESS_WRITE or info & ACCESS_MANAGE
+    elif mode == '2':
+      return info & ACCESS_WRITE or info & ACCESS_MANAGE
+    elif mode == 'm':
+      return info & ACCESS_MANAGE
+
+  def repositories(self):
+    ''' Iterate over all repositories. Yields tuples in the form of
+    `(repo_name, path)`. '''
+
+    if not os.path.isdir(self.config.repository_root):
+      return
+    for dirpath, dirs, files in os.walk(self.config.repository_root):
+      for dirname in dirs:
+        if dirname != '.git' and dirname.endswith('.git'):
+          repo_path = os.path.join(dirpath, dirname)
+          repo_name = self.path2repo(repo_path)
+          yield (repo_name, repo_path)
 
 
 # == Command Functions ========================================================
@@ -240,6 +256,7 @@ def command_repo(auth, args):
   delete_p = subparser.add_parser('delete')
   delete_p.add_argument('repo')
   delete_p.add_argument('-f', '--force', action='store_true')
+  list_p = subparser.add_parser('list')
   args = parser.parse_args(args)
 
   if not args.cmd:
@@ -248,8 +265,8 @@ def command_repo(auth, args):
 
   if args.cmd == 'create':
     path = auth.repo2path(args.name)
-    if not auth.check_access(path, 'w'):
-      print("error: write permission to {!r} denied".format(args.name))
+    if not auth.check_access(path, 'm'):
+      print("error: manage permission to {!r} denied".format(args.name))
       return errno.EPERM
 
     # Make sure that none of the parent directories is a repository.
@@ -268,11 +285,11 @@ def command_repo(auth, args):
   elif args.cmd == 'rename':
     old_path = auth.repo2path(args.old)
     new_path = auth.repo2path(args.new)
-    if not auth.check_access(old_path, 'w'):
-      print("error: write permission to {!r} denied".format(args.old))
+    if not auth.check_access(old_path, 'm'):
+      print("error: manage permission to {!r} denied".format(args.old))
       return errno.EPERM
-    if not auth.check_access(new_path, 'w'):
-      print("error: write permission to {!r} denied".format(args.new))
+    if not auth.check_access(new_path, 'm'):
+      print("error: manage permission to {!r} denied".format(args.new))
       return errno.EPERM
 
     # Make sure that none of the parent directories is a repository.
@@ -295,8 +312,8 @@ def command_repo(auth, args):
     return 0
   elif args.cmd == 'delete':
     path = auth.repo2path(args.repo)
-    if not auth.check_access(path, 'w'):
-      print("error: write permission to {!r} denied".format(args.repo))
+    if not auth.check_access(path, 'm'):
+      print("error: manage permission to {!r} denied".format(args.repo))
       return errno.EPERM
     if not os.path.exists(path):
       print("error: repository {!r} does not exist".format(args.repo))
@@ -317,6 +334,19 @@ def command_repo(auth, args):
       return exc.errno
     else:
       print("done.")
+    return 0
+  elif args.cmd == 'list':
+    for repo_name, path in auth.repositories():
+      info = auth.config.access_control.access_info(auth, auth.user.name, path)
+      flags = list('---')
+      if info & ACCESS_READ:
+        flags[0] = 'r'
+      if info & ACCESS_WRITE:
+        flags[1] = 'w'
+      if info & ACCESS_MANAGE:
+        flags[2] = 'm'
+      if info:
+        print(''.join(flags), ': ', repo_name, sep='')
     return 0
 
   print("error: command not handled.")
