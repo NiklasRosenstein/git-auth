@@ -81,12 +81,22 @@ class SimpleAccessControl(AccessControl):
   ''' This simple implementation of the `AccessControl` interface
   allows all registered users to manage their home directory via SSH. '''
 
+  def __init__(self, has_root=False):
+    super().__init__()
+    self.has_root = has_root
+
   def get_user(self, auth, user_name):
     if not re.match('[A-z0-9\-_]', user_name):
       raise self.UnknownUser(user_name)
+    if self.has_root and user_name == 'root':
+      return User(user_name, '/', True)
     return User(user_name, '/' + user_name, True)
 
   def access_info(self, auth, user_name, path):
+    if self.has_root and user_name == 'root':
+      if is_subpath(path, auth.config.repository_root):
+        return ACCESS_READ | ACCESS_WRITE
+
     home = os.path.join(auth.config.repository_root, user_name)
     if is_subpath(path, home):
       return ACCESS_READ | ACCESS_WRITE
@@ -204,7 +214,70 @@ class GitAuth(object):
 def command_repo(auth, args):
   ''' Manage repositories. '''
 
-  print("command repo not implemented.")
+  parser = argparse.ArgumentParser(prog='repo')
+  subparser = parser.add_subparsers(dest='cmd')
+  create_p = subparser.add_parser('create')
+  create_p.add_argument('name')
+  rename_p = subparser.add_parser('rename')
+  rename_p.add_argument('old')
+  rename_p.add_argument('new')
+  delete_p = subparser.add_parser('delete')
+  delete_p.add_argument('repo')
+  args = parser.parse_args(args)
+
+  if not args.cmd:
+    parser.print_usage()
+    return 0
+
+  if args.cmd == 'create':
+    path = auth.repo2path(args.name)
+    if not auth.check_access(path, 'w'):
+      print("error: write permission to {!r} denied".format(args.name))
+      return errno.EPERM
+
+    # Make sure that none of the parent directories is a repository.
+    if any(x.endswith('.git') for x in path.split(os.sep)[:-1]):
+      print("error: can not create repository inside repository")
+      return errno.EPERM
+
+    if os.path.exists(path):
+      print("error: repository {!r} already exists.".format(args.name))
+      return errno.EEXIST
+
+    res = subprocess.call(['git', 'init', '--bare', path])
+    if res != 0:
+      print("error: repository could not be created.")
+    return res
+  elif args.cmd == 'rename':
+    old_path = auth.repo2path(args.old)
+    new_path = auth.repo2path(args.new)
+    if not auth.check_access(old_path, 'w'):
+      print("error: write permission to {!r} denied".format(args.old))
+      return errno.EPERM
+    if not auth.check_access(new_path, 'w'):
+      print("error: write permission to {!r} denied".format(args.new))
+      return errno.EPERM
+
+    # Make sure that none of the parent directories is a repository.
+    if any(x.endswith('.git') for x in new_path.split(os.sep)[:-1]):
+      print("error: can not create repository inside repository")
+      return errno.EPERM
+
+    if not os.path.exists(old_path):
+      print("error: repository {!r} does not exist".format(args.old))
+      return errno.ENOENT
+    if os.path.exists(new_path):
+      print("error: repository {!r} already exists.".format(args.new))
+      return errno.EEXIST
+
+    try:
+      os.rename(old_path, new_path)
+    except (OSError, IOError) as exc:
+      print("error:", exc)
+      return exc.errno
+    return 0
+
+  print("error: command not handled.")
   return 255
 
 
