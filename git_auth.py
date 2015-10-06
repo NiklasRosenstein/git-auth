@@ -38,6 +38,10 @@ __version__ = '0.9.0'
 ACCESS_READ = 1 << 0
 ACCESS_WRITE = 1 << 1
 ACCESS_MANAGE = 1 << 2
+LEVEL_USER = 100
+LEVEL_SHELLUSER = 200
+LEVEL_ADMIN = 300
+LEVEL_ROOT = 400
 
 
 def printerr(*args, **kwargs):
@@ -141,7 +145,7 @@ class AccessController(object):
   ''' This interface describes the controller to manage access to Git
   repositories. '''
 
-  User = collections.namedtuple('User', 'name home shell_access')
+  User = collections.namedtuple('User', 'name home level')
 
   class UnknownUser(Exception): pass
 
@@ -163,17 +167,17 @@ class SimpleAccessController(AccessController):
   ''' This simple implementation of the `AccessController` interface
   allows all registered users to manage their home directory via SSH. '''
 
-  def __init__(self, has_root=False, shell_access=True):
+  def __init__(self, has_root=False, user_level=LEVEL_SHELLUSER):
     super().__init__()
     self.has_root = has_root
-    self.shell_access = shell_access
+    self.user_level = user_level
 
   def get_user_info(self, session, user_name):
     if not re.match('[A-z0-9\-_]', user_name):
       raise self.UnknownUser(user_name)
     if self.has_root and user_name == 'root':
-      return self.User(user_name, '/', True)
-    return self.User(user_name, '/' + user_name, self.shell_access)
+      return self.User(user_name, '/', LEVEL_ROOT)
+    return self.User(user_name, '/' + user_name, self.user_level)
 
   def get_access_info(self, session, user_name, path):
     if self.has_root and user_name == 'root':
@@ -189,7 +193,7 @@ class SimpleAccessController(AccessController):
 class GitAuthSession(object):
   ''' This is the central authentication and repository management class. '''
 
-  Command = collections.namedtuple('Command', 'func requires_permission')
+  Command = collections.namedtuple('Command', 'func required_level')
   commands = {}
 
   def __init__(self, user, config=None):
@@ -232,6 +236,8 @@ class GitAuthSession(object):
         elif command[0] == '?':
           command[0] = 'help'
         self.command(command)
+
+    return 0
 
   def repo2path(self, repo_name):
     ''' Converts a relative repository name to an absolute path on the
@@ -288,7 +294,7 @@ class GitAuthSession(object):
           yield (repo_name, repo_path)
 
 
-def command(name, requires_permission=True):
+def command(name, required_level=LEVEL_SHELLUSER):
   ''' Decorator for a function to be registered as a command for the
   git_auth shell. The *name* is the name of the command. The decorated
   function is added to the `GitAuthSession.commands` dictionary.
@@ -299,7 +305,7 @@ def command(name, requires_permission=True):
 
   def decorator(func):
     GitAuthSession.commands[name] = GitAuthSession.Command(
-      func, requires_permission)
+      func, required_level)
 
   return decorator
 
@@ -462,7 +468,7 @@ def _command_help(session, args):
         print("  ", line, sep='')
 
 
-@command('git-upload-pack', requires_permission=False)
+@command('git-upload-pack', required_level=LEVEL_USER)
 def _command_git_upload_pack(session, args):
   parser = argparse.ArgumentParser(prog='git-upload-pack')
   parser.add_argument('repo')
@@ -471,7 +477,7 @@ def _command_git_upload_pack(session, args):
   return subprocess.call(['git-upload-pack', path])
 
 
-@command('git-receive-pack', requires_permission=False)
+@command('git-receive-pack', required_level=LEVEL_USER)
 def _command_git_upload_pack(session, args):
   parser = argparse.ArgumentParser(prog='git-receive-pack')
   parser.add_argument('repo')
@@ -494,6 +500,7 @@ def _command_git_upload_pack(session, args):
         printerr('success.')
   return res
 
+
 # == Main =====================================================================
 # =============================================================================
 
@@ -515,19 +522,19 @@ def main():
     if ssh_command:
       args.command = shlex.split(ssh_command)
 
-  # Users without manage privileges can't enter the interactive
-  # shell or execute commands that are explcitly permitted.
-  if not session.user.shell_access:
-    if not args.command:
-      allowed = False
-    else:
-      allowed = not session.commands[args.command[0]].requires_permission
-    if not allowed:
-      printerr("error: you have no SSH privileges")
-      return errno.EPERM
-
+  # If a command is directory exexuted, make sure the user has the
+  # right privilege level.
   if args.command:
+    if args.command[0] not in session.commands:
+      printerr("error: unknown command {!r}".format(args.command[0]))
+      return 255
+    required_level = session.commands[args.command[0]].required_level
+    if session.user.level < required_level:
+      printerr("error: you are not privileged to execute this command")
+      return errno.EPERM
     return session.command(args.command)
-
-  session.cmdloop()
-  return 0
+  else:
+    if session.user.level < LEVEL_SHELLUSER:
+      printerr("error: you have are not privileged for shell access")
+      return errno.EPERM
+    return session.cmdloop()
