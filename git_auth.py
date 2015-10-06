@@ -471,7 +471,6 @@ def _command_git_upload_pack(session, args):
   return subprocess.call(['git-upload-pack', path])
 
 
-
 @command('git-receive-pack', requires_permission=False)
 def _command_git_upload_pack(session, args):
   parser = argparse.ArgumentParser(prog='git-receive-pack')
@@ -484,7 +483,7 @@ def _command_git_upload_pack(session, args):
   if not res and hooks:
     printerr('info: invoking webhooks')
     data = {'host': session.config.host_name,
-      'repo': args.repo, 'event': 'update'}
+      'repo': args.repo, 'event': 'receive-pack'}
     for name, url in hooks.items():
       printerr('info:  ', name, end='... ')
       try:

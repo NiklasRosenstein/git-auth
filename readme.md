@@ -4,11 +4,12 @@ __Features__
 
 - Configure read, write and manage access to repositories
 - Repository management via the command line
-- Support for webhooks
+- Simple webhook support
 
 __Future Plans__
 
 - [ ] Ability to restrict access to branches of a repository
+- [ ] Detailed information for webhooks (using Git update hook)
 
 __Configuration__
 
@@ -21,6 +22,7 @@ is enough to grant or prevent access to certain directories for a user.
 
     repository_root = os.path.expanduser('~/repos')
     access_controller = git_auth.SimpleAccessControl()
+    host_name = "my_git_server"
 
     @git_auth.command('hello')
     def hello(auth, args):
@@ -60,3 +62,18 @@ commands are available:
 
     repo remove-hook <repo> <name>
       Remo a webhook from the specified repository.
+
+__Webhooks__
+
+Webhooks are currently only implemented by sending an POST notification to
+registered URLs when `git-receive-pack` was called. The data that is sent to
+the server is in JSON format:
+
+    {
+      "host": "<configured host_name>",
+      "repo": "<repository name>",
+      "event": "receive-pack",
+    }
+
+It is planned to provide more detailed information for web hooks (eg. the
+old and new commit hash) by leveraging the Git "update" repository hook.
