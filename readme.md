@@ -16,9 +16,10 @@ is enough to grant or prevent access to certain directories for a user.
     import git_auth
 
     repository_root = os.path.expanduser('~/repos')
-    access_control = git_auth.SimpleAccessControl()
+    access_controller = git_auth.SimpleAccessControl()
 
-    def command_hello(auth, args):
+    @git_auth.command('hello')
+    def hello(auth, args):
       print("Hello,", args[0])
 
 __Manage Repositories__

@@ -156,16 +156,17 @@ class SimpleAccessController(AccessController):
   ''' This simple implementation of the `AccessController` interface
   allows all registered users to manage their home directory via SSH. '''
 
-  def __init__(self, has_root=False):
+  def __init__(self, has_root=False, shell_access=True):
     super().__init__()
     self.has_root = has_root
+    self.shell_access = shell_access
 
   def get_user_info(self, session, user_name):
     if not re.match('[A-z0-9\-_]', user_name):
       raise self.UnknownUser(user_name)
     if self.has_root and user_name == 'root':
       return self.User(user_name, '/', True)
-    return self.User(user_name, '/' + user_name, True)
+    return self.User(user_name, '/' + user_name, self.shell_access)
 
   def get_access_info(self, session, user_name, path):
     if self.has_root and user_name == 'root':
@@ -181,6 +182,9 @@ class SimpleAccessController(AccessController):
 class GitAuthSession(object):
   ''' This is the central authentication and repository management class. '''
 
+  Command = collections.namedtuple('Command', 'func requires_permission')
+  commands = {}
+
   def __init__(self, user, config=None):
     super().__init__()
     if config is None:
@@ -194,35 +198,18 @@ class GitAuthSession(object):
     commands and the additional commands in the configuration. The
     exit code of the command is returned. '''
 
-    fname = 'command_' + command[0]
-    command_func = None
-    if fname in globals():
-      command_func = globals()[fname]
-    if hasattr(self.config, fname):
-      command_func = getattr(self.config, fname)
-    if not callable(command_func):
+    try:
+      func = self.commands[command[0]].func
+    except KeyError:
       print("unknown command:", command[0], file=sys.stderr)
-    else:
-      try:
-        return command_func(self, command[1:])
-      except SystemExit as exc:
-        return exc.code
-      except Exception as exc:
-        traceback.print_exc()
+      return 255
+    try:
+      return func(self, command[1:])
+    except SystemExit as exc:
+      return exc.code
+    except Exception as exc:
+      traceback.print_exc()
     return 255
-
-  def commands(self):
-    ''' Returns a dictionary of all available commands mapping the name
-    to the command function that implements it. '''
-
-    commands = {}
-    chain = vars(self.config).items(), globals().items()
-    for key, value in itertools.chain(*chain):
-      if callable(value) and key.startswith('command_'):
-        name = key[8:]
-        commands[name] = value
-
-    return commands
 
   def cmdloop(self, intro='git-auth$ '):
     ''' Enters the interactive shell. '''
@@ -294,45 +281,27 @@ class GitAuthSession(object):
           yield (repo_name, repo_path)
 
 
+def command(name, requires_permission=True):
+  ''' Decorator for a function to be registered as a command for the
+  git_auth shell. The *name* is the name of the command. The decorated
+  function is added to the `GitAuthSession.commands` dictionary.
+
+  A command that does not require permission can also be executed by
+  users that have no shell accesss. This is only used for `git-upload-pack`
+  and `git-receive-pack`. '''
+
+  def decorator(func):
+    GitAuthSession.commands[name] = GitAuthSession.Command(
+      func, requires_permission)
+
+  return decorator
+
+
 # == Command Functions ========================================================
 # =============================================================================
 
-def _check_repo(session, repo_name, access_mask, check='exists'):
-  ''' Helper function that converts the repository name to the full
-  path, makes sure it exists and checks if the user has access to
-  the repository with the specified access mask. Returns the path
-  to the repository or raises `SystemExit` with the appropriate
-  exit code. '''
-
-  path = session.repo2path(repo_name)
-  if not session.get_access_info(path) & access_mask:
-    if access_mask & ACCESS_MANAGE:
-      mode = 'manage'
-    elif access_mask & ACCESS_WRITE:
-      mode = 'write'
-    elif access_mask & ACCESS_READ:
-      mode = 'read'
-    else:
-      mode = '<invalid access mask>'
-    print("error: {0} permission to {!r} denied".format(mode, repo_name))
-    raise SystemExit(errno.EPERM)
-  if check == 'exists':
-    if not os.path.exists(path):
-      print("error: repository {!r} does not exist".format(repo_name))
-      raise SystemExit(errno.ENOENT)
-    if not os.path.isdir(path):
-      print("fatal error: repository {!r} is not a directory".format(args.repo))
-      raise SystemExit(errno.ENOENT)  # XXX: better exit code?
-  elif check == 'not-exists':
-    if os.path.exists(path):
-      print("error: repository {!r} already exists".format(repo_name))
-      raise SystemExit(errno.EEXIST)
-  elif check:
-    raise ValueError("invalid check value: {!r}".format(check))
-  return path
-
-
-def command_repo(session, args):
+@command('repo')
+def _command_repo(session, args):
   ''' Manage repositories. '''
 
   parser = argparse.ArgumentParser(prog='repo')
@@ -469,20 +438,39 @@ def command_repo(session, args):
               print('  ', line, sep='')
     return 0
 
-  print("error: command not handled.")
+  printerr("error: command {!r} not handled".format(args.cmd))
   return 255
 
 
-def command_help(session, args):
+@command('help')
+def _command_help(session, args):
   ''' Show this help. '''
 
   print("Available commands:")
   print()
-  for key, func in sorted(session.commands().items(), key=lambda x: x[0]):
+  for key, cmd in sorted(session.commands.items(), key=lambda x: x[0]):
     print(key)
-    if func.__doc__:
-      for line in textwrap.wrap(textwrap.dedent(func.__doc__)):
+    if cmd.func.__doc__:
+      for line in textwrap.wrap(textwrap.dedent(cmd.func.__doc__)):
         print("  ", line, sep='')
+
+
+@command('git-upload-pack', requires_permission=False)
+def _command_git_upload_pack(session, args):
+  parser = argparse.ArgumentParser(prog='git-upload-pack')
+  parser.add_argument('repo')
+  args = parser.parse_args(args)
+  path = check_repo(session, args.repo, ACCESS_READ, 'exists')
+  return subprocess.call(['git-upload-pack', path])
+
+
+@command('git-receive-pack', requires_permission=False)
+def _command_git_upload_pack(session, args):
+  parser = argparse.ArgumentParser(prog='git-receive-pack')
+  parser.add_argument('repo')
+  args = parser.parse_args(args)
+  path = check_repo(session, args.repo, ACCESS_WRITE, 'exists')
+  return subprocess.call(['git-receive-pack', path])
 
 
 # == Main =====================================================================
@@ -506,14 +494,16 @@ def main():
     if ssh_command:
       args.command = shlex.split(ssh_command)
 
-  if args.command:
-    if args.command[0] in ('git-receive-pack', 'git-upload-pack'):
-      return subprocess.call(args.command)
-
-  # Users without manage privileges can't go past this line.
+  # Users without manage privileges can't enter the interactive
+  # shell or execute commands that are explcitly permitted.
   if not session.user.shell_access:
-    print("You are not privileged for SSH Access.")
-    return errno.EPERM
+    if not args.command:
+      allowed = False
+    else:
+      allowed = not session.commands[args.command[0]].requires_permission
+    if not allowed:
+      printerr("error: you have no SSH privileges")
+      return errno.EPERM
 
   if args.command:
     return session.command(args.command)
