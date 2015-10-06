@@ -2,9 +2,13 @@
 
 __Features__
 
-- Fine grain access control
+- Configure read, write and manage access to repositories
 - Repository management via the command line
 - Support for webhooks
+
+__Future Plans__
+
+- [ ] Ability to restrict access to branches of a repository
 
 __Configuration__
 
