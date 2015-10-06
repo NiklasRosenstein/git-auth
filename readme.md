@@ -24,10 +24,6 @@ is enough to grant or prevent access to certain directories for a user.
     access_controller = git_auth.SimpleAccessControl()
     host_name = "my_git_server"
 
-    @git_auth.command('hello')
-    def hello(auth, args):
-      print("Hello,", args[0])
-
 __Manage Repositories__
 
 A user with managing privilieges can connect via SSH and use the integrated

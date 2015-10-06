@@ -203,19 +203,33 @@ class GitAuthSession(object):
     self.user = config.access_controller.get_user_info(self, user)
     self.config = config
 
+  def check_command(self, command_name):
+    ''' Checks if *command_name* is an existing command and if the
+    current user is allowed to execute that command. If everything is
+    ok, the `GitAuthSession.Command` object is returned, otherwise None. '''
+
+    try:
+      command_info = self.commands[command_name]
+    except KeyError:
+      printerr("unknown command:", command_name)
+      return None
+    if self.user.level < command_info.required_level:
+      # Don't give non-privileged users an idea.
+      printerr("unknown command:", command_name)
+      return None
+    return command_info
+
   def command(self, command):
     ''' Execute the specified command list. The first element in the
     list is used as the command name and dispatched by the default
     commands and the additional commands in the configuration. The
     exit code of the command is returned. '''
 
-    try:
-      func = self.commands[command[0]].func
-    except KeyError:
-      print("unknown command:", command[0], file=sys.stderr)
+    command_info = self.check_command(command[0])
+    if not command_info:
       return 255
     try:
-      return func(self, command[1:])
+      return command_info.func(self, command[1:])
     except SystemExit as exc:
       return exc.code
     except Exception as exc:
@@ -227,6 +241,7 @@ class GitAuthSession(object):
 
     header = "git-auth v{0} - Copyright (C) 2015 {1}"
     print(header.format(__version__, __author__))
+    print("Welcome back, {0}!".format(self.user.name))
 
     while True:
       command = shlex.split(input(intro))
@@ -462,6 +477,8 @@ def _command_help(session, args):
   print("Available commands:")
   print()
   for key, cmd in sorted(session.commands.items(), key=lambda x: x[0]):
+    if session.user.level < cmd.required_level:
+      continue
     print(key)
     if cmd.func.__doc__:
       for line in textwrap.wrap(textwrap.dedent(cmd.func.__doc__)):
@@ -525,13 +542,8 @@ def main():
   # If a command is directory exexuted, make sure the user has the
   # right privilege level.
   if args.command:
-    if args.command[0] not in session.commands:
-      printerr("error: unknown command {!r}".format(args.command[0]))
+    if not session.check_command(args.command[0]):
       return 255
-    required_level = session.commands[args.command[0]].required_level
-    if session.user.level < required_level:
-      printerr("error: you are not privileged to execute this command")
-      return errno.EPERM
     return session.command(args.command)
   else:
     if session.user.level < LEVEL_SHELLUSER:
