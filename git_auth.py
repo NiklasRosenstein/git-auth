@@ -528,6 +528,14 @@ def _command_git_upload_pack(session, args):
   return res
 
 
+@command('shell', required_level=LEVEL_ROOT)
+def _command_shell(session, args):
+  ''' Root users can use this command to enter the interactive shell. '''
+
+  # XXX: What if the user doesn't use Bash? Is it still "-l" to log in?
+  # XXX: Windows doesn't use the SHELL env variable.
+  return subprocess.call([os.environ['SHELL'], '-l'])
+
 # == Main =====================================================================
 # =============================================================================
 
