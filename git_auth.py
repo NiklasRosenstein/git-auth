@@ -40,6 +40,11 @@ ACCESS_WRITE = 1 << 1
 ACCESS_MANAGE = 1 << 2
 
 
+def printerr(*args, **kwargs):
+  kwargs.setdefault('file', sys.stderr)
+  print(*args, **kwargs)
+
+
 def get_subpath(path, parent):
   relpath = os.path.relpath(path, parent)
   if relpath == os.curdir or relpath.startswith(os.pardir):
@@ -64,6 +69,41 @@ def confirm(question):
       return False
     else:
       print("Please reply with yes/y or no/n.")
+
+
+def check_repo(session, repo_name, access_mask, check='exists'):
+  ''' Helper function that converts the repository name to the full
+  path, makes sure it exists and checks if the user has access to
+  the repository with the specified access mask. Returns the path
+  to the repository or raises `SystemExit` with the appropriate
+  exit code. '''
+
+  path = session.repo2path(repo_name)
+  if not session.get_access_info(path) & access_mask:
+    if access_mask & ACCESS_MANAGE:
+      mode = 'manage'
+    elif access_mask & ACCESS_WRITE:
+      mode = 'write'
+    elif access_mask & ACCESS_READ:
+      mode = 'read'
+    else:
+      mode = '<invalid access mask>'
+    printerr("error: {} permission to {!r} denied".format(mode, repo_name))
+    raise SystemExit(errno.EPERM)
+  if check == 'exists':
+    if not os.path.exists(path):
+      printerr("error: repository {!r} does not exist".format(repo_name))
+      raise SystemExit(errno.ENOENT)
+    if not os.path.isdir(path):
+      printerr("fatal error: repository {!r} is not a directory".format(args.repo))
+      raise SystemExit(errno.ENOENT)  # XXX: better exit code?
+  elif check == 'not-exists':
+    if os.path.exists(path):
+      printerr("error: repository {!r} already exists".format(repo_name))
+      raise SystemExit(errno.EEXIST)
+  elif check:
+    raise ValueError("invalid check value: {!r}".format(check))
+  return path
 
 
 def parse_webhooks(filename):
@@ -326,24 +366,24 @@ def command_repo(session, args):
     return 0
 
   if args.cmd == 'create':
-    path = _check_repo(session, args.name, ACCESS_MANAGE, 'not-exists')
+    path = check_repo(session, args.name, ACCESS_MANAGE, 'not-exists')
 
     # Make sure that none of the parent directories is a repository.
     if any(x.endswith('.git') for x in path.split(os.sep)[:-1]):
-      print("error: can not create repository inside repository")
+      printerr("error: can not create repository inside repository")
       return errno.EPERM
 
     res = subprocess.call(['git', 'init', '--bare', path])
     if res != 0:
-      print("error: repository could not be created.")
+      printerr("error: repository could not be created.")
     return res
   elif args.cmd == 'rename':
-    old_path = _check_repo(session, args.old, ACCESS_MANAGE, 'exists')
-    new_path = _check_repo(session, args.new, ACCESS_MANAGE, 'not-exists')
+    old_path = check_repo(session, args.old, ACCESS_MANAGE, 'exists')
+    new_path = check_repo(session, args.new, ACCESS_MANAGE, 'not-exists')
 
     # Make sure that none of the parent directories is a repository.
     if any(x.endswith('.git') for x in new_path.split(os.sep)[:-1]):
-      print("error: can not create repository inside repository")
+      printerr("error: can not create repository inside repository")
       return errno.EPERM
 
     try:
@@ -353,26 +393,27 @@ def command_repo(session, args):
         os.makedirs(parent)
       os.rename(old_path, new_path)
     except (OSError, IOError) as exc:
-      print("error:", exc)
+      printerr("error:", exc)
       return exc.errno
     return 0
   elif args.cmd == 'delete':
-    path = _check_repo(session, args.repo, ACCESS_MANAGE, 'exists')
+    path = check_repo(session, args.repo, ACCESS_MANAGE, 'exists')
     if not args.force:
       if not confirm('do you really want to delete this repository?'):
         return 0
+
     print("deleting repository {!r}...".format(args.repo), end=' ')
     try:
       shutil.rmtree(path)
     except (OSError, IOError) as exc:
       print("error.")
-      print(exc)
+      printerr(exc)
       return exc.errno
     else:
       print("done.")
     return 0
   elif args.cmd == 'describe':
-    path = _check_repo(session, args.repo, ACCESS_MANAGE, 'exists')
+    path = check_repo(session, args.repo, ACCESS_MANAGE, 'exists')
     descfile = os.path.join(path, 'description')
     if args.description:
       with open(descfile, 'w') as fp:
@@ -384,28 +425,28 @@ def command_repo(session, args):
   elif args.cmd == 'install-hook':
     # XXX: Validate hook name?
     # XXX: Validate URL scheme?
-    path = _check_repo(session, args.repo, ACCESS_MANAGE, 'exists')
+    path = check_repo(session, args.repo, ACCESS_MANAGE, 'exists')
     hooksfile = os.path.join(path, 'webhooks')
     hooks = parse_webhooks(hooksfile)
     if args.name in hooks:
-      print("error: webhook name {!r} occupied".format(args.name))
+      printerr("error: webhook name {!r} occupied".format(args.name))
       return errno.EEXIST
     hooks[args.name] = args.url
     write_webhooks(hooksfile, hooks)
     return 0
   elif args.cmd == 'list-hooks':
-    path = _check_repo(session, args.repo, ACCESS_MANAGE, 'exists')
+    path = check_repo(session, args.repo, ACCESS_MANAGE, 'exists')
     hooksfile = os.path.join(path, 'webhooks')
     hooks = parse_webhooks(hooksfile)
     for name, url in sorted(hooks.items(), key=lambda x: x[0]):
       print("{0}: {1}".format(name, url))
     return 0
   elif args.cmd == 'remove-hook':
-    path = _check_repo(session, args.repo, ACCESS_MANAGE, 'exists')
+    path = check_repo(session, args.repo, ACCESS_MANAGE, 'exists')
     hooksfile = os.path.join(path, 'webhooks')
     hooks = parse_webhooks(hooksfile)
     if args.name not in hooks:
-      print("error: webhook {!r} does not exist".format(args.name))
+      printerr("error: webhook {!r} does not exist".format(args.name))
       return errno.ENOENT
     del hooks[args.name]
     write_webhooks(hooksfile, hooks)

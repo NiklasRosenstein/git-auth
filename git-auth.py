@@ -14,6 +14,10 @@
 # either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 
+if __name__ != '__main__':
+  raise RuntimeError('can only be executed as a script')
+
+import os
 import sys
 import git_auth
 sys.exit(git_auth.main())
