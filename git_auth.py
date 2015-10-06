@@ -25,6 +25,7 @@ import collections
 import errno
 import itertools
 import shlex
+import shutil
 import subprocess
 import textwrap
 import traceback
@@ -46,6 +47,21 @@ def get_subpath(path, parent):
 
 def is_subpath(path, parent):
   return bool(get_subpath(path, parent))
+
+
+def confirm(question):
+  ''' Asks the specified *question* and requests the user to reply with
+  yes or no. Returns True if yes was replied, False if no. Will ask the
+  question again if an invalid reply was given. '''
+
+  while True:
+    reply = input(question + ' [y/n] ').strip().lower()
+    if reply in ('yes', 'y'):
+      return True
+    elif reply in ('no', 'n'):
+      return False
+    else:
+      print("Please reply with yes/y or no/n.")
 
 
 # == Git Auth Layer ===========================================================
@@ -223,6 +239,7 @@ def command_repo(auth, args):
   rename_p.add_argument('new')
   delete_p = subparser.add_parser('delete')
   delete_p.add_argument('repo')
+  delete_p.add_argument('-f', '--force', action='store_true')
   args = parser.parse_args(args)
 
   if not args.cmd:
@@ -275,6 +292,31 @@ def command_repo(auth, args):
     except (OSError, IOError) as exc:
       print("error:", exc)
       return exc.errno
+    return 0
+  elif args.cmd == 'delete':
+    path = auth.repo2path(args.repo)
+    if not auth.check_access(path, 'w'):
+      print("error: write permission to {!r} denied".format(args.repo))
+      return errno.EPERM
+    if not os.path.exists(path):
+      print("error: repository {!r} does not exist".format(args.repo))
+      return errno.ENOENT
+    if not os.path.isdir(path):
+      print("fatal error: repository {!r} is not a directory".format(args.repo))
+      return errno.ENOENT
+
+    if not args.force:
+      if not confirm('do you really want to delete this repository?'):
+        return 0
+    print("deleting repository {!r}...".format(args.repo), end=' ')
+    try:
+      shutil.rmtree(path)
+    except (OSError, IOError) as exc:
+      print("error.")
+      print(exc)
+      return exc.errno
+    else:
+      print("done.")
     return 0
 
   print("error: command not handled.")
