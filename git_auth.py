@@ -165,22 +165,32 @@ class AccessController(object):
 
 class SimpleAccessController(AccessController):
   ''' This simple implementation of the `AccessController` interface
-  allows all registered users to manage their home directory via SSH. '''
+  allows all registered users to manage their home directory via SSH.
 
-  def __init__(self, has_root=False, user_level=LEVEL_SHELLUSER):
+  Arguments:
+    global_read (bool): True by default. If enabled, any user is allowed
+      to read from any repository.
+    root_user (str): The name of the root user or None if there should be
+      no user with root privileges. Only the root user can arbitrarily
+      modify the SSH authorized keys from the shell.
+    user_name (int): The default user level, defaults to `LEVEL_SHELLUSER`.
+  '''
+
+  def __init__(self, global_read=True, root_user='root',
+      user_level=LEVEL_SHELLUSER):
     super().__init__()
-    self.has_root = has_root
+    self.root_user = root_user
     self.user_level = user_level
 
   def get_user_info(self, session, user_name):
     if not re.match('[A-z0-9\-_]', user_name):
       raise self.UnknownUser(user_name)
-    if self.has_root and user_name == 'root':
+    if self.root_user and self.root_user == user_name:
       return self.User(user_name, '/', LEVEL_ROOT)
     return self.User(user_name, '/' + user_name, self.user_level)
 
   def get_access_info(self, session, user_name, path):
-    if self.has_root and user_name == 'root':
+    if self.root_user and self.root_user == user_name:
       if is_subpath(path, session.config.repository_root):
         return ACCESS_READ | ACCESS_WRITE | ACCESS_MANAGE
 
