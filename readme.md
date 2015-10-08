@@ -20,9 +20,11 @@ is enough to grant or prevent access to certain directories for a user.
     import os
     import git_auth
 
+    git_auth_bin = os.path.join(os.path.dirname(__file__), 'git-auth.sh')
     repository_root = os.path.expanduser('~/repos')
-    access_controller = git_auth.SimpleAccessControl()
-    host_name = "my_git_server"
+    access_controller = git_auth.SimpleAccessController()
+    ssh_key_manager = git_auth.OpenSSHKeyManager()
+    host_name = 'my_git_server'
 
 __Manage Repositories__
 
@@ -38,7 +40,7 @@ commands are available:
       Rename a repository. The repository name restrictions of the `repo
       create` command apply.
 
-    repo delete <repo>
+    repo delete <repo> [-f/--force]
       Delete the specified repository.
 
     repo describe <repo> [<description>]
@@ -58,6 +60,39 @@ commands are available:
 
     repo remove-hook <repo> <name>
       Remo a webhook from the specified repository.
+
+__Other Shell Commands__
+
+    shell
+      Users with root access can enter the interactive shell using this
+      command.
+
+    ssh-key [-u/--user <user>]
+      Command to operate on SSH keys. The `ssh_key_manager` must be
+      configured in `git_auth_config`. Currently, only OpenSSH is
+      supported. This command does nothing on its own.
+      Root users can use the -u/--user option to change the user that
+      the ssh-key is added to/deleted from (depending on the subcommand).
+
+    ssh-key add <name> [<pub_key>]
+      Add a SSH public key for the current user account. Users with root
+      access are able to add an SSH key for a specific user account by
+      passing the -u/--user option. If the <pub_key> is not specified,
+      the key is read from stdin.
+
+    ssh-key list
+      List all installed SSH keys. Users with root access may use the
+      -u/--user option to view the public SSH keys of another user.
+
+    ssh-key del <name> [-f/--force]
+      Delete the SSH key with the specified <name>. Users with root
+      access can delete SSH keys of other users. If -f/--force is
+      passed, you will not be asked for confirmation to delete the key.
+
+    ssh-key update
+      Root users can use this command to update all SSH keys to use
+      the correct git-auth command. This should be called when the
+      installation path of git-auth changes.
 
 __Webhooks__
 

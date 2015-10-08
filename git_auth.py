@@ -200,6 +200,18 @@ class SimpleAccessController(AccessController):
     return 0
 
 
+class SSHKeyManager(object):
+  ''' This class defines the interface for objects that implement
+  managing the SSH keys of the local SSH server (eg. OpenSSH, BitVise). '''
+
+  pass
+
+
+class OpenSSHKeyManager(SSHKeyManager):
+  ''' This class implements managing the OpenSSH `authorized_keys` file. '''
+
+  pass
+
 class GitAuthSession(object):
   ''' This is the central authentication and repository management class. '''
 
@@ -535,6 +547,44 @@ def _command_shell(session, args):
   # XXX: What if the user doesn't use Bash? Is it still "-l" to log in?
   # XXX: Windows doesn't use the SHELL env variable.
   return subprocess.call([os.environ['SHELL'], '-l'])
+
+
+@command('ssh-key', required_level=LEVEL_SHELLUSER)
+def _command_ssh_key(session, args):
+  level = session.user.level
+
+  parser = argparse.ArgumentParser(prog='ssh-key')
+  if level >= LEVEL_ROOT:
+    parser.add_argument('-u', '--user')
+  subparsers = parser.add_subparsers(dest='cmd')
+  add_p = subparsers.add_parser('add')
+  add_p.add_argument('name')
+  add_p.add_argument('pub_key', nargs='?')
+  list_p = subparsers.add_parser('list')
+  del_p = subparsers.add_parser('del')
+  del_p.add_argument('name')
+  del_p.add_argument('-f', '--force', action='store_true')
+  if level >= LEVEL_ROOT:
+    update_p = subparsers.add_parser('update')
+
+  args = parser.parse_args(args)
+  if not args.cmd:
+    parser.print_usage()
+    return
+
+  if level < LEVEL_ROOT:
+    args.user = session.user.name
+
+  manager = getattr(session.config, 'ssh_key_manager')
+  if not manager:
+    printerr("error: no ssh_key_manager configured")
+    return errno.ENOPKG  # XXX: Better error code?
+  if not isinstance(manager, SSHKeyManager):
+    printerr("error: invalid ssh_key_manager configuration")
+    return 255
+
+  printerr("error: command not implemented")
+
 
 # == Main =====================================================================
 # =============================================================================
