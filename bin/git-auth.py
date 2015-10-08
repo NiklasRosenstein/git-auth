@@ -19,5 +19,5 @@ if __name__ != '__main__':
 
 import os
 import sys
-import git_auth
-sys.exit(git_auth.main())
+import git_auth.__main__
+sys.exit(git_auth.__main__.main())

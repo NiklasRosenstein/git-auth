@@ -10,6 +10,7 @@ __Future Plans__
 
 - [ ] Ability to restrict access to branches of a repository
 - [ ] Detailed information for webhooks (using Git update hook)
+- [ ] Manage OpenSSH keys from the command-line
 
 __Configuration__
 
@@ -20,7 +21,7 @@ is enough to grant or prevent access to certain directories for a user.
     import os
     import git_auth
 
-    git_auth_bin = os.path.join(os.path.dirname(__file__), 'git-auth.sh')
+    git_auth_bin = os.path.join(os.path.dirname(__file__), 'bin', 'git-auth.sh')
     repository_root = os.path.expanduser('~/repos')
     access_controller = git_auth.SimpleAccessController()
     ssh_key_manager = git_auth.OpenSSHKeyManager()

@@ -7,4 +7,6 @@ fi
 if [ -e "~/.bash_profile" ]; then
   source "~/.bash_profile"
 fi
-python3 "$(dirname ${BASH_SOURCE})/git-auth.py" $*
+DIRNAME=$(dirname ${BASH_SOURCE})
+export PYTHONPATH="$DIRNAME/..":$PYTHONPATH
+python3 "$DIRNAME/git-auth.py" $*
