@@ -34,7 +34,11 @@ def get_argument_parser():
 def main():
   parser = get_argument_parser()
   args = parser.parse_args()
-  session = GitAuthSession(args.user)
+  try:
+    session = GitAuthSession(args.user)
+  except auth.UnknownUser as exc:
+    print('error: unknown user {!r}'.format(str(exc)), file=sys.stderr)
+    return errno.EPERM
 
   if not args.command:
     ssh_command = os.environ.pop('SSH_ORIGINAL_COMMAND', None)
@@ -49,6 +53,6 @@ def main():
     return session.command(args.command)
   else:
     if session.user.level < auth.LEVEL_SHELLUSER:
-      printerr("error: you have are not privileged for shell access")
+      print("error: you have are not privileged for shell access", file=sys.stderr)
       return errno.EPERM
     return session.cmdloop()

@@ -27,20 +27,23 @@ LEVEL_SHELLUSER = 200
 LEVEL_ADMIN = 300
 LEVEL_ROOT = 400
 
+User = collections.namedtuple('User', 'name home level')
+
+
+class UnknownUser(Exception):
+  pass
+
 
 class AccessController(object):
   ''' This interface describes the controller to manage access to Git
   repositories. '''
 
-  User = collections.namedtuple('User', 'name home level')
-
-  class UnknownUser(Exception): pass
 
   def get_user_info(self, session, user_name):
     ''' Return user information for the specified *user_name* or raise
-    `AccessController.UnknownUser` if the user does not exist. '''
+    `UnknownUser` if the user does not exist. '''
 
-    raise self.UnknownUser(user_name)
+    raise UnknownUser(user_name)
 
   def get_access_info(self, session, user_name, path):
     ''' Return a bit mask that indicates the access privileges of the
@@ -70,11 +73,11 @@ class SimpleAccessController(AccessController):
     self.user_level = user_level
 
   def get_user_info(self, session, user_name):
-    if not re.match('[A-z0-9\-_]', user_name):
-      raise self.UnknownUser(user_name)
+    if not re.match('^[A-Za-z0-9\-_]+$', user_name):
+      raise UnknownUser(user_name)
     if self.root_user and self.root_user == user_name:
-      return self.User(user_name, '/', LEVEL_ROOT)
-    return self.User(user_name, '/' + user_name, self.user_level)
+      return User(user_name, '/', LEVEL_ROOT)
+    return User(user_name, '/' + user_name, self.user_level)
 
   def get_access_info(self, session, user_name, path):
     if self.root_user and self.root_user == user_name:
