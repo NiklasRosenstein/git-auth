@@ -14,6 +14,7 @@
 # either express or implied. See the License for the specific
 # language governing permissions and limitations under the License.
 
+import os
 import collections
 import re
 from . import util
@@ -58,17 +59,19 @@ class SimpleAccessController(AccessController):
   allows all registered users to manage their home directory via SSH.
 
   Arguments:
-    global_read (bool): True by default. If enabled, any user is allowed
-      to read from any repository.
+    global_access (int): The global access privilege mask for all users.
+      Defaults to `ACCESS_READ`, allowing all users to read from all
+      repositories.
     root_user (str): The name of the root user or None if there should be
       no user with root privileges. Only the root user can arbitrarily
       modify the SSH authorized keys from the shell.
     user_name (int): The default user level, defaults to `LEVEL_SHELLUSER`.
   '''
 
-  def __init__(self, global_read=True, root_user='root',
+  def __init__(self, global_access=ACCESS_READ, root_user='root',
       user_level=LEVEL_SHELLUSER):
     super().__init__()
+    self.global_access = global_access
     self.root_user = root_user
     self.user_level = user_level
 
@@ -80,11 +83,14 @@ class SimpleAccessController(AccessController):
     return User(user_name, '/' + user_name, self.user_level)
 
   def get_access_info(self, session, user_name, path):
+    if not util.issubpath(path, session.config.repository_root):
+      return 0
+
     if self.root_user and self.root_user == user_name:
-      if util.issubpath(path, session.config.repository_root):
-        return ACCESS_READ | ACCESS_WRITE | ACCESS_MANAGE
+      return ACCESS_READ | ACCESS_WRITE | ACCESS_MANAGE
 
     home = os.path.join(session.config.repository_root, user_name)
     if util.issubpath(path, home):
       return ACCESS_READ | ACCESS_WRITE | ACCESS_MANAGE
-    return 0
+    else:
+      return self.global_access
