@@ -231,7 +231,7 @@ def _command_git_upload_pack(session, args):
   parser.add_argument('repo')
   args = parser.parse_args(args)
   path = check_repo(session, args.repo, ACCESS_READ, 'exists')
-  return subprocess.call(['git-upload-pack', path])
+  return subprocess.call(['git', 'upload-pack', path])
 
 
 @command('git-receive-pack', required_level=LEVEL_USER)
@@ -240,7 +240,7 @@ def _command_git_upload_pack(session, args):
   parser.add_argument('repo')
   args = parser.parse_args(args)
   path = check_repo(session, args.repo, ACCESS_WRITE, 'exists')
-  res = subprocess.call(['git-receive-pack', path])
+  res = subprocess.call(['git', 'receive-pack', path])
   hooksfile = os.path.join(path, 'webhooks')
   hooks = parse_webhooks(hooksfile)
   if not res and hooks:
@@ -262,9 +262,11 @@ def _command_git_upload_pack(session, args):
 def _command_shell(session, args):
   ''' Root users can use this command to enter the interactive shell. '''
 
-  # XXX: What if the user doesn't use Bash? Is it still "-l" to log in?
-  # XXX: Windows doesn't use the SHELL env variable.
-  return subprocess.call([os.environ['SHELL'], '-l'])
+  if sys.platform == 'win32':
+    return subprocess.call('cmd')
+  elif sys.platform in ('cygwin', 'darwin') or sys.platform.startswith('linux'):
+    # XXX: Is it -l for other shells than Bash as well?
+    return subprocess.call(os.environ['SHELL'], '-l')
 
 
 @command('ssh-key', required_level=LEVEL_SHELLUSER)
