@@ -21,14 +21,20 @@ git_auth is configured with the `git_auth_config.py` Python script. The
 access control can be customized to an arbitrary extent, but usually it
 is enough to grant or prevent access to certain directories for a user.
 
-    import os
-    import git_auth
+```python
+import os
+import git_auth
 
-    git_auth_bin = os.path.join(os.path.dirname(__file__), 'bin', 'git-auth.sh')
-    repository_root = os.path.expanduser('~/repos')
-    access_controller = git_auth.SimpleAccessController()
-    ssh_key_manager = git_auth.OpenSSHKeyManager()
-    host_name = 'my_git_server'
+repository_root = os.path.expanduser('~/repos')
+access_controller = git_auth.SimpleAccessController(root_user='root')
+host_name = 'my_git_server'
+
+if os.name == 'posix':
+  git_auth_bin = os.path.join(os.path.dirname(__file__), 'bin', 'git-auth.sh')
+  ssh_key_manager = git_auth.OpenSSHKeyManager(git_auth_bin)
+elif os.name == 'nt':
+  ssh_key_manager = None
+```
 
 __Manage Repositories__
 
@@ -92,11 +98,6 @@ __Other Shell Commands__
       Delete the SSH key with the specified <name>. Users with root
       access can delete SSH keys of other users. If -f/--force is
       passed, you will not be asked for confirmation to delete the key.
-
-    ssh-key update
-      Root users can use this command to update all SSH keys to use
-      the correct git-auth command. This should be called when the
-      installation path of git-auth changes.
 
 __Webhooks__
 

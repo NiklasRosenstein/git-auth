@@ -22,7 +22,7 @@ import shutil
 import subprocess
 import textwrap
 
-from . import command, util
+from . import command, util, ssh
 from .auth import ACCESS_READ, ACCESS_WRITE, ACCESS_MANAGE
 from .auth import LEVEL_USER, LEVEL_SHELLUSER, LEVEL_ADMIN, LEVEL_ROOT
 from .hooks import parse_webhooks, write_webhooks, invoke_webhook
@@ -294,15 +294,61 @@ def _command_ssh_key(session, args):
     parser.print_usage()
     return
 
-  if level < LEVEL_ROOT:
+  if not getattr(args, 'user', None):
     args.user = session.user.name
+  else:
+    try:
+      info = session.config.access_control.get_user_info(args.user)
+    except auth.UnknownUser as exc:
+      printerr("error: user {!r} does not exist".format(str(exc)))
+      return errno.EINVAL
 
   manager = getattr(session.config, 'ssh_key_manager')
   if not manager:
     printerr("error: no ssh_key_manager configured")
-    return errno.ENOPKG  # XXX: Better error code?
-  if not isinstance(manager, SSHKeyManager):
+    return 255  # XXX: Better error code?
+  if not isinstance(manager, ssh.SSHKeyManager):
     printerr("error: invalid ssh_key_manager configuration")
     return 255
 
-  printerr("error: command not implemented")
+  if args.cmd == 'add':
+    if not args.pub_key:
+      args.pub_key = sys.stdin.readline()
+    try:
+      key = ssh.parse_authorized_key(args.pub_key)
+      if key.options:
+        raise ValueError('options are not allowed')
+    except ValueError as exc:
+      printerr("error: invalid SSH public key")
+      return errno.EINVAL
+    try:
+      manager.add_key(args.user, args.name, key.type, key.blob)
+    except ValueError as exc:
+      printerr("error: could not add SSH key: {}".format(exc))
+      return errno.EINVAL
+    print("SSH key added.")
+    return 0
+  elif args.cmd == 'list':
+    keys = list(manager.iter_keys(args.user))
+    if not keys:
+      print("no SSH keys for user {!r}".format(args.user))
+    else:
+      print("SSH keys for user {!r}".format(args.user))
+      print()
+      for key in keys:
+        print('*', key.title, end='')
+        if key.comment:
+          print(' -', key.comment)
+        else:
+          print()
+    return 0
+  elif args.cmd == 'del':
+    try:
+      manager.del_key(args.user, args.name)
+    except ValueError as exc:
+      printerr("error: {}".format(exc))
+      return 255
+    print("SSH key deleted.")
+    return 0
+  else:
+    raise RuntimeError
