@@ -121,12 +121,11 @@ old and new commit hash) by leveraging the Git "update" repository hook.
 1. Create a "git" user on your system
 2. Clone the git-auth repository to a location that you are comfortable with.
 3. Make any changes to `git_auth_config.py`
-4. Add your public SSH key to the "git" users `authorized_keys` file and
-prepend it with the full path to the `bin/git-auth.sh` file in the git-auth
-repository that you cloned and your user name, like so
+4. Add your public SSH key to git "git" users `authorized_keys` file by
+using the `ssh-key add` command of git-auth.
 
   ```
-  command="/Users/git/git-auth/bin/git-auth.sh root" ssh-rsa AAAA...
+  $ cat ~/.ssh/id_rsa.pub | bin/git-auth.sh root ssh-key add root_key
   ```
 
 ## Windows
