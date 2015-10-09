@@ -146,12 +146,16 @@ class GitAuthSession(object):
 
     if not os.path.isdir(self.config.repository_root):
       return
-    for dirpath, dirs, files in os.walk(self.config.repository_root):
-      for dirname in dirs:
-        if dirname != '.git' and dirname.endswith('.git'):
-          repo_path = os.path.join(dirpath, dirname)
-          repo_name = self.path2repo(repo_path)
-          yield (repo_name, repo_path)
+
+    def walk(directory):
+      if directory.endswith('.git') and os.path.basename(directory) != '.git':
+        yield self.path2repo(directory), directory
+      for name in os.listdir(directory):
+        fn = os.path.join(directory, name)
+        if os.path.isdir(fn):
+          yield from walk(fn)
+
+    yield from walk(self.config.repository_root)
 
 
 def command(name, required_level=LEVEL_SHELLUSER):
