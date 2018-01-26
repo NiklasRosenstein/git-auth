@@ -1,0 +1,7 @@
+{
+  "name": "@NiklasRosenstein/git-auth",
+  "version": "1.0.0",
+  "license": "MIT",
+  "authors": ["rosensteinniklas@gmail.com"],
+  "description": "OpenSSH authentication layer for Git repositories."
+}
