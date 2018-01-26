@@ -1,3 +1,5 @@
 
+.PHONY: test
 test:
-	docker run --rm -it $(shell docker build . -q) nodepy ./src/client.py --test --username JohnSmith
+	docker build . -f test/Dockerfile -t git-auth-test -q
+	docker run --rm -it git-auth-test

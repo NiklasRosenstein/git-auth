@@ -3,5 +3,9 @@
   "version": "1.0.0",
   "license": "MIT",
   "authors": ["rosensteinniklas@gmail.com"],
-  "description": "OpenSSH authentication layer for Git repositories."
+  "description": "OpenSSH authentication layer for Git repositories.",
+  "main": "./src/index.py",
+  "bin": {
+    "git-auth-client": "./src/client.py"
+  }
 }

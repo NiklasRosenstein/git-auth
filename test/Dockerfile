@@ -8,3 +8,9 @@ RUN nodepy --version && nodepy-pm version
 
 WORKDIR /app
 COPY . .
+
+WORKDIR /app/test
+RUN nodepy-pm install -e ..
+ENV PATH=".nodepy/bin:${PATH}"
+RUN chmod +x test.sh
+ENTRYPOINT bash -c ./test.sh
